@@ -150,8 +150,13 @@ with gzip.open(file_path, "wb") as file:
 #
 # {'dataset': 'train', 'precision': 0.8, 'balanced_accuracy': 0.7, 'recall': 0.9, 'f1_score': 0.85}
 # {'dataset': 'test', 'precision': 0.7, 'balanced_accuracy': 0.6, 'recall': 0.8, 'f1_score': 0.75}
+
+
+import gzip
 from sklearn.metrics import precision_score, balanced_accuracy_score, recall_score, f1_score, confusion_matrix
 
+import os
+print(os.getcwd())
 
 
 with gzip.open('files/models/model.pkl.gz', 'rb') as f:
@@ -211,3 +216,6 @@ cm_matrix_test = cm_matrix(cm_test, 'test')
 metrics = [metrics_train, metrics_test, cm_matrix_train, cm_matrix_test]
 print(metrics)
 pd.DataFrame(metrics).to_json(output_path, orient='records', lines=True)
+
+print(model.score(x_train, y_train))
+print(model.score(x_test, y_test))
