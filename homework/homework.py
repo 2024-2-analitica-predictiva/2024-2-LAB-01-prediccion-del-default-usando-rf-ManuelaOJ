@@ -46,14 +46,25 @@
 #   de educación, agrupe estos valores en la categoría "others".
 # - Renombre la columna "default payment next month" a "default"
 # - Remueva la columna "ID".
-import pandas as pd 
-from sklearn.model_selection import train_test_split, GridSearchCV 
-from sklearn.compose import ColumnTransformer 
-from sklearn.pipeline import Pipeline 
-from sklearn.preprocessing import OneHotEncoder, StandardScaler 
-from sklearn.ensemble import RandomForestClassifier 
-import pickle
+import pandas as pd
 import numpy as np
+import os
+import json
+import gzip
+import pickle
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.ensemble import RandomForestClassifier
+
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import (
+    precision_score,
+    recall_score,
+    f1_score,
+    balanced_accuracy_score,
+    confusion_matrix,
+)
 
 # Funcion para limpiar los datos
 
@@ -89,6 +100,7 @@ x_test, y_test = df_test.drop(columns='default'), df_test['default']
 # - Transforma las variables categoricas usando el método
 #   one-hot-encoding.
 # - Ajusta un modelo de bosques aleatorios (rando forest).
+
 pipeline = Pipeline([
     ('preprocessor', ColumnTransformer(
         transformers=[
@@ -99,10 +111,13 @@ pipeline = Pipeline([
     ('model', RandomForestClassifier(random_state=42))  # Modelo Random Forest
 ])
 
-# Paso 4.
-# Optimice los hiperparametros del pipeline usando validación cruzada.
-# Use 10 splits para la validación cruzada. Use la función de precision
-# balanceada para medir la precisión del modelo.
+
+# # Paso 4.
+# # Optimice los hiperparametros del pipeline usando validación cruzada.
+# # Use 10 splits para la validación cruzada. Use la función de precision
+# # balanceada para medir la precisión del modelo.
+
+
 param_grid = {
     'model__n_estimators': [100],
     'model__max_depth': [None],
@@ -122,100 +137,78 @@ model= GridSearchCV(pipeline,
 
 model.fit(x_train, y_train)
 
-# Paso 5.
-# Guarde el modelo (comprimido con gzip) como "files/models/model.pkl.gz".
-# Recuerde que es posible guardar el modelo comprimido usanzo la libreria gzip.
-import os
-import pickle
-import gzip
 
-file_path = "files/models/model.pkl.gz"
-os.makedirs(os.path.dirname(file_path), exist_ok=True)
+# Paso 5: Guardar el modelo
 
-if os.path.exists(file_path):
-    os.remove(file_path)
-    print(f"Archivo existente eliminado: {file_path}")
+models_dir = 'files/models'
+os.makedirs(models_dir, exist_ok=True)
 
-# Guardar el modelo
-with gzip.open(file_path, "wb") as file:
+# Nombre del archivo comprimido
+compressed_model_path = "files/models/model.pkl.gz"
+
+
+with gzip.open(compressed_model_path, "wb") as file:
     pickle.dump(model, file)
 
-# Paso 6.
-# Calcule las metricas de precision, precision balanceada, recall,
-# y f1-score para los conjuntos de entrenamiento y prueba.
-# Guardelas en el archivo files/output/metrics.json. Cada fila
-# del archivo es un diccionario con las metricas de un modelo.
-# Este diccionario tiene un campo para indicar si es el conjunto
-# de entrenamiento o prueba. Por ejemplo:
-#
-# {'dataset': 'train', 'precision': 0.8, 'balanced_accuracy': 0.7, 'recall': 0.9, 'f1_score': 0.85}
-# {'dataset': 'test', 'precision': 0.7, 'balanced_accuracy': 0.6, 'recall': 0.8, 'f1_score': 0.75}
+
+# Paso 6: Cálculo de métricas
+def calculate_and_save_metrics(model, x_train, x_test, y_train, y_test):
+    y_train_pred = model.predict(x_train)
+    y_test_pred = model.predict(x_test)
+
+    metrics = [
+        {
+            'type': 'metrics',
+            'dataset': 'train',
+            'precision': precision_score(y_train, y_train_pred, zero_division=0),
+            'balanced_accuracy': balanced_accuracy_score(y_train, y_train_pred),
+            'recall': recall_score(y_train, y_train_pred, zero_division=0),
+            'f1_score': f1_score(y_train, y_train_pred, zero_division=0)
+        },
+        {
+            'type': 'metrics',
+            'dataset': 'test',
+            'precision': precision_score(y_test, y_test_pred, zero_division=0),
+            'balanced_accuracy': balanced_accuracy_score(y_test, y_test_pred),
+            'recall': recall_score(y_test, y_test_pred, zero_division=0),
+            'f1_score': f1_score(y_test, y_test_pred, zero_division=0)
+        }
+    ]
+
+    os.makedirs("files/output", exist_ok=True)
+    with open("files/output/metrics.json", "w") as f:
+        for metric in metrics:
+            f.write(json.dumps(metric) + '\n')
 
 
-import gzip
-from sklearn.metrics import precision_score, balanced_accuracy_score, recall_score, f1_score, confusion_matrix
+# Paso 7: Cálculo de matrices de confusión
+def calculate_and_save_confusion_matrices(model, x_train, x_test, y_train, y_test):
+    y_train_pred = model.predict(x_train)
+    y_test_pred = model.predict(x_test)
 
-import os
-print(os.getcwd())
+    cm_train = confusion_matrix(y_train, y_train_pred)
+    cm_test = confusion_matrix(y_test, y_test_pred)
 
+    matrices = [
+        {
+            'type': 'cm_matrix',
+            'dataset': 'train',
+            'true_0': {'predicted_0': int(cm_train[0, 0]), 'predicted_1': int(cm_train[0, 1])},
+            'true_1': {'predicted_0': int(cm_train[1, 0]), 'predicted_1': int(cm_train[1, 1])}
+        },
+        {
+            'type': 'cm_matrix',
+            'dataset': 'test',
+            'true_0': {'predicted_0': int(cm_test[0, 0]), 'predicted_1': int(cm_test[0, 1])},
+            'true_1': {'predicted_0': int(cm_test[1, 0]), 'predicted_1': int(cm_test[1, 1])}
+        }
+    ]
 
-with gzip.open('files/models/model.pkl.gz', 'rb') as f:
-    model = pickle.load(f)
-y_train_pred = model.predict(x_train)
-y_test_pred = model.predict(x_test)
+    with open("files/output/metrics.json", "a") as f:
+        for matrix in matrices:
+            f.write(json.dumps(matrix) + '\n')
 
+# Ejecutar cálculo de métricas y matrices
+calculate_and_save_metrics(model, x_train, x_test, y_train, y_test)
+calculate_and_save_confusion_matrices(model, x_train, x_test, y_train, y_test)
 
-def metrics (y_true, y_pred, dataset):
-    return {
-    'type': 'metrics',
-    'dataset': dataset,
-    'precision': precision_score(y_true, y_pred),
-    'balanced_accuracy': balanced_accuracy_score(y_true, y_pred),
-    'recall': recall_score(y_true, y_pred),
-    'f1_score': f1_score(y_true, y_pred)
-    }
-
-metrics_train = metrics(y_train, y_train_pred, 'train')
-metrics_test = metrics(y_test, y_test_pred, 'test')
-
-# Paso 7.
-# Calcule las matrices de confusion para los conjuntos de entrenamiento y
-# prueba. Guardelas en el archivo files/output/metrics.json. Cada fila
-# del archivo es un diccionario con las metricas de un modelo.
-# de entrenamiento o prueba. Por ejemplo:
-#
-# {'type': 'cm_matrix', 'dataset': 'train', 'true_0': {"predicted_0": 15562, "predicte_1": 666}, 'true_1': {"predicted_0": 3333, "predicted_1": 1444}}
-# {'type': 'cm_matrix', 'dataset': 'test', 'true_0': {"predicted_0": 15562, "predicte_1": 650}, 'true_1': {"predicted_0": 2490, "predicted_1": 1420}}
-#
-output_dir = "files/output"
-os.makedirs(output_dir, exist_ok=True)
-output_path = os.path.join(output_dir, "metrics.json")
-
-# Eliminar el archivo si ya existe
-if os.path.exists(output_path):
-    os.remove(output_path)
-    print(f"Archivo existente eliminado: {output_path}")
-
-# Crear las métricas de la matriz de confusión
-def cm_matrix(cm, dataset):
-    return {
-        'type': 'cm_matrix',
-        'dataset': dataset,
-        'true_0': {"predicted_0": cm[0, 0], "predicted_1": cm[0, 1]},
-        'true_1': {"predicted_0": cm[1, 0], "predicted_1": cm[1, 1]}
-    }
-
-# Calcular las matrices de confusión
-cm_train = confusion_matrix(y_train, y_train_pred)
-cm_test = confusion_matrix(y_test, y_test_pred)
-
-cm_matrix_train = cm_matrix(cm_train, 'train')
-cm_matrix_test = cm_matrix(cm_test, 'test')
-
-# Guardar las métricas
-metrics = [metrics_train, metrics_test, cm_matrix_train, cm_matrix_test]
-print(metrics)
-pd.DataFrame(metrics).to_json(output_path, orient='records', lines=True)
-
-print(model.score(x_train, y_train))
-print(model.score(x_test, y_test))
